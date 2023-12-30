@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
 	todo "go-to-do"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -11,9 +13,15 @@ import (
 	"github.com/rs/zerolog"
 )
 
-const filename = "todo.json"
+var filename = "todo.json"
 
 func main() {
+	// Check if environment variable defines different file name
+	if os.Getenv("TODO_FILE") != "" {
+		filename = os.Getenv("TODO_FILE")
+	}
+
+	// Logging configuratgion
 	output := zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: time.RFC3339}
 	output.FormatLevel = func(i interface{}) string {
 		return strings.ToUpper(fmt.Sprintf("| %-6s|", i))
@@ -29,10 +37,9 @@ func main() {
 	}
 
 	log := zerolog.New(output).With().Timestamp().Logger()
-	// log.Info().Msg("Welcome to TODO cli app")
 
 	// Parsing command line flags
-	task := flag.String("task", "", "Task to be included in todo list")
+	add := flag.Bool("add", false, "Add a new task to the list")
 	list := flag.Bool("list", false, "List all tasks")
 	complete := flag.Int("complete", 0, "item to be completed")
 
@@ -47,8 +54,12 @@ func main() {
 	switch {
 	case *list:
 		fmt.Print(l)
-	case *task != "":
-		l.Add(*task)
+	case *add:
+		task, err := getTask(os.Stdin, flag.Args()...)
+		if err != nil {
+			log.Fatal().Err(err)
+		}
+		l.Add(task)
 		if err := l.Save(filename); err != nil {
 			log.Fatal().Err(err).Msgf("can't save to file %s", filename)
 		}
@@ -62,4 +73,25 @@ func main() {
 	default:
 		log.Fatal().Msg("invalid option")
 	}
+}
+
+func getTask(r io.Reader, args ...string) (string, error) {
+	if len(args) > 0 {
+		return strings.Join(args, " "), nil
+	}
+
+	// If arguments are not present, read input from STDIN
+	s := bufio.NewScanner(r)
+	s.Scan()
+
+	if err := s.Err(); err != nil {
+		return "", err
+	}
+
+	if len(s.Text()) == 0 {
+		return "", fmt.Errorf("task cannot be empty")
+	}
+
+	return s.Text(), nil
+
 }
